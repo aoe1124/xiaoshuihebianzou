@@ -214,6 +214,32 @@
             margin: 8px 0 0;
             font-size: 14px;
         }
+        .compress-controls {
+            margin: 20px 0;
+            padding: 12px 16px;
+            background: #f5f5f7;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .compress-controls label {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            color: #666;
+            font-size: 13px;
+        }
+        .compress-controls input[type="range"] {
+            width: 200px;
+        }
+        #qualityValue {
+            min-width: 40px;
+        }
+        .file-size {
+            color: #666;
+            font-size: 13px;
+        }
     </style>
 </head>
 <body>
@@ -272,6 +298,15 @@
         <div id="progress" class="progress" style="display: none;">
             <div class="progress-bar"></div>
             <div class="progress-text">处理中: <span id="progressText">0/0</span></div>
+        </div>
+
+        <div class="compress-controls">
+            <label>
+                导出质量：
+                <input type="range" id="quality" min="10" max="100" value="90" onchange="updateFileSize()">
+                <span id="qualityValue">90%</span>
+            </label>
+            <div id="fileSize" class="file-size"></div>
         </div>
 
         <button class="download-btn" onclick="downloadImages()">下载处理后的图片</button>
@@ -339,6 +374,7 @@
                     reader.readAsDataURL(file);
                 });
             }
+            updateFileSize();
         });
 
         document.getElementById('watermarkInput').addEventListener('change', function(e) {
@@ -379,30 +415,29 @@
             return positions[position];
         }
 
-        async function processAllImages() {
-            const progress = document.getElementById('progress');
-            const progressBar = progress.querySelector('.progress-bar');
-            const progressText = document.getElementById('progressText');
-            
-            progress.style.display = 'block';
-            const results = [];
-            
-            for (let i = 0; i < currentImages.length; i++) {
-                progressText.textContent = `${i + 1}/${currentImages.length}`;
-                progressBar.style.width = `${((i + 1) / currentImages.length) * 100}%`;
-                
-                const result = await processImage(currentImages[i].data);
-                results.push({
-                    name: currentImages[i].name,
-                    data: result
-                });
-            }
-            
-            progress.style.display = 'none';
-            return results;
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
         }
 
-        function processImage(imageData) {
+        function updateFileSize() {
+            const quality = document.getElementById('quality').value;
+            document.getElementById('qualityValue').textContent = quality + '%';
+            
+            if (!watermarkImage || currentImages.length === 0) return;
+            
+            processImage(currentImages[0].data, quality/100).then(result => {
+                const base64Data = result.split(',')[1];
+                const binaryData = atob(base64Data);
+                const size = binaryData.length;
+                document.getElementById('fileSize').textContent = `预计文件大小：${formatFileSize(size)}`;
+            });
+        }
+
+        function processImage(imageData, quality = 0.9) {
             return new Promise((resolve) => {
                 const canvas = document.createElement('canvas');
                 const ctx = canvas.getContext('2d');
@@ -426,7 +461,7 @@
                         ctx.globalAlpha = document.getElementById('opacity').value / 100;
                         ctx.drawImage(watermark, x, y, watermarkWidth, watermarkHeight);
                         
-                        resolve(canvas.toDataURL('image/png'));
+                        resolve(canvas.toDataURL('image/jpeg', quality));
                     };
                     watermark.src = watermarkImage;
                 };
@@ -437,7 +472,8 @@
         async function downloadImages() {
             if (!watermarkImage || currentImages.length === 0) return;
             
-            const results = await processAllImages();
+            const quality = document.getElementById('quality').value / 100;
+            const results = await processAllImages(quality);
             
             if (results.length === 1) {
                 const link = document.createElement('a');
@@ -457,6 +493,29 @@
                 link.href = URL.createObjectURL(content);
                 link.click();
             }
+        }
+
+        async function processAllImages(quality) {
+            const progress = document.getElementById('progress');
+            const progressBar = progress.querySelector('.progress-bar');
+            const progressText = document.getElementById('progressText');
+            
+            progress.style.display = 'block';
+            const results = [];
+            
+            for (let i = 0; i < currentImages.length; i++) {
+                progressText.textContent = `${i + 1}/${currentImages.length}`;
+                progressBar.style.width = `${((i + 1) / currentImages.length) * 100}%`;
+                
+                const result = await processImage(currentImages[i].data, quality);
+                results.push({
+                    name: currentImages[i].name,
+                    data: result
+                });
+            }
+            
+            progress.style.display = 'none';
+            return results;
         }
 
         const uploadArea = document.querySelector('.upload-box');
